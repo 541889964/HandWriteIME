@@ -1,0 +1,86 @@
+name: Android Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+          cache-disabled: true
+
+      - name: Env Info
+        run: |
+          { echo "===== ENV =====";
+            java -version 2>&1;
+            gradle --version 2>&1;
+            echo "PWD: $(pwd)";
+            echo "===== FILES =====";
+            ls -la;
+          } | tee build.log
+
+      - name: Build APK
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee -a build.log
+          echo "===== exit: $? =====" | tee -a build.log
+
+      - name: Commit build.log
+        if: always()
+        run: |
+          set +e
+          [ -s build.log ] || echo "(empty)" > build.log
+          SIZE=$(stat -c%s build.log)
+          if [ "$SIZE" -gt 400000 ]; then
+            tail -c 400000 build.log > _small.log
+          else
+            cp build.log _small.log
+          fi
+          B64=$(base64 -w 0 _small.log)
+          REPO="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          TK="${{ github.token }}"
+          SHA=$(curl -s -H "Authorization: Bearer $TK" \
+            "https://api.github.com/repos/$REPO/contents/build_latest.log?ref=$BRANCH" \
+            | jq -r '.sha // empty')
+          if [ -z "$SHA" ]; then
+            curl -s -X PUT \
+              -H "Authorization: Bearer $TK" \
+              -H "Accept: application/vnd.github+json" \
+              -d "{\"message\":\"ci: log\",\"content\":\"$B64\",\"branch\":\"$BRANCH\"}" \
+              "https://api.github.com/repos/$REPO/contents/build_latest.log" > /dev/null
+          else
+            curl -s -X PUT \
+              -H "Authorization: Bearer $TK" \
+              -H "Accept: application/vnd.github+json" \
+              -d "{\"message\":\"ci: log\",\"content\":\"$B64\",\"sha\":\"$SHA\",\"branch\":\"$BRANCH\"}" \
+              "https://api.github.com/repos/$REPO/contents/build_latest.log" > /dev/null
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: apk
+          path: app/build/outputs/apk/debug/*.apk

@@ -1,0 +1,10 @@
+<resources>
+  <style name="Theme.HandWriteIME" parent="Theme.Material3.DayNight.NoActionBar">
+    <item name="android:windowBackground">@android:color/white</item>
+    <item name="android:windowAnimationStyle">@style/IMEAnim</item>
+  </style>
+  <style name="IMEAnim" parent="@android:style/Animation.InputMethod">
+    <item name="android:windowEnterAnimation">@anim/ime_enter</item>
+    <item name="android:windowExitAnimation">@anim/ime_exit</item>
+  </style>
+</resources>
